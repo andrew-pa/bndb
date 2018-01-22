@@ -1,0 +1,16 @@
+[package]
+name = "bndb-sim"
+version = "0.1.0"
+authors = ["Andrew Palmer <andrew.pa@outlook.com>"]
+
+[dependencies]
+serde = "^1.0"
+serde_derive = "^1.0"
+bincode = "^0.9"
+rand = "^0.4"
+zip = "^0.3"
+bndb-core = { path = "../bndb-core" }
+
+[dependencies.cgmath]
+version = "^0.16"
+features = ["serde"]
