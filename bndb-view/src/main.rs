@@ -37,7 +37,7 @@ static FS_SRC: &'static str = "
 out vec4 out_color;
 
 void main() {
-    out_color = vec4(0.8, 0.6, 0.2, 1.0);
+    out_color = vec4(0.8, 0.8, 1.0, 0.5);
 }";
 
 fn compile_shader(src: &str, ty: GLenum) -> GLuint {
@@ -168,8 +168,7 @@ impl App {
         let simm = bincode::deserialize_from(&mut inf.by_name("metadata").expect("open metadata file"), bincode::Infinite).expect("load sim metadata");
         println!("simm = {:?}", simm);
 
-        let bodies: Vec<Body> = bincode::deserialize_from(&mut inf.by_name(&format!("{}", 0)).expect("open step file"), bincode::Infinite).expect("load data");
-        let positions: Vec<Vec3> = bodies.iter().map(|x| x.position).collect();
+        let positions: Vec<Vec3> = bincode::deserialize_from(&mut inf.by_name(&format!("{}", 0)).expect("open step file"), bincode::Infinite).expect("load data");
         unsafe { gl::BufferData(
             gl::ARRAY_BUFFER,
             (positions.len() * mem::size_of::<Vec3>()) as GLsizeiptr,
@@ -198,8 +197,8 @@ impl App {
         gl::BindVertexArray(self.vao);
         gl::BindBuffer(gl::ARRAY_BUFFER, self.vbo);
 
-        let bodies: Vec<Body> = bincode::deserialize_from(&mut self.inf.by_name(&format!("{}", self.current_step)).expect("open step file"), bincode::Infinite).expect("load data");
-        let mut positions: Vec<Vec3> = bodies.iter().map(|x| x.position).collect();
+
+        let positions: Vec<Vec3> = bincode::deserialize_from(&mut self.inf.by_name(&format!("{}", self.current_step)).expect("open step file"), bincode::Infinite).expect("load data");
         gl::BufferData(
             gl::ARRAY_BUFFER,
             (positions.len() * mem::size_of::<Vec3>()) as GLsizeiptr,
@@ -207,17 +206,20 @@ impl App {
             gl::DYNAMIC_DRAW,
         );
 
-        self.current_step+=50;
+        self.current_step+=2;
         if self.current_step > self.simm.steps-1 {
             println!("loop");
             self.current_step = 0;
         }
 
+        gl::Enablei(gl::BLEND, 0);
+        gl::BlendEquation(gl::FUNC_ADD);
+        gl::BlendFunc(gl::SRC_ALPHA, gl::DST_ALPHA);
         gl::UseProgram(self.program);
         let v: Matrix4<GLfloat> = Matrix4::look_at(Point3::new((0.05*self.t).cos()*30.0, 14.0, (0.05*self.t).sin()*30.0), Point3::new(0.0, 0.0, 0.0), Vector3::unit_y());
         let p: Matrix4<GLfloat> = cgmath::perspective(Rad(std::f32::consts::FRAC_PI_4), 1.333333, 0.1, 1000.0);
         gl::UniformMatrix4fv(self.vp_unif, 1, 0, (p*v).as_ptr());
-        gl::PointSize(4.0);
+        gl::PointSize(3.0);
         gl::DrawArrays(gl::POINTS, 0, positions.len() as i32);
         self.t += 0.01;
     }
@@ -228,7 +230,7 @@ fn main() {
     let mut events_loop = glutin::EventsLoop::new();
     let window = glutin::WindowBuilder::new()
         .with_title("bndb view")
-        .with_dimensions(1024, 768);
+        .with_dimensions(640*4, 480*4);
     let context = glutin::ContextBuilder::new()
         .with_vsync(true);
     let gl_window = glutin::GlWindow::new(window, context, &events_loop).unwrap();
@@ -239,7 +241,7 @@ fn main() {
 
     unsafe {
         gl::load_with(|symbol| gl_window.get_proc_address(symbol) as *const _);
-        gl::ClearColor(0.0, 0.0, 0.0, 1.0);
+        gl::ClearColor(0.0, 0.0, 0.0, 0.0);
     }
 
     let mut app = App::init();

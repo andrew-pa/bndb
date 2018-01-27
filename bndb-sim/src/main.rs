@@ -4,7 +4,7 @@ extern crate serde;
 extern crate serde_derive;
 extern crate bincode;
 extern crate rand;
-extern crate zip;
+extern crate tar;
 extern crate bndb_core;
 extern crate rayon;
 
@@ -126,29 +126,42 @@ fn main() {
     let start_init = Instant::now();
     let mut bodies = Vec::new();
     let mut rnd = rand::thread_rng();
-    for i in 0..1200 {
+    for i in 0..1600 {
         let theta: Real = rnd.gen::<Real>()*2.0*pi();
         let r: Real = rnd.gen::<Real>()*8.0 + 8.0;
-        let y: Real = rnd.gen::<Real>()*2.0 - 1.0;
+        let y: Real = (rnd.gen::<Real>()*2.0 - 1.0)*0.3;
         let p = Vec3::new(r*theta.cos(), y, r*theta.sin());
         bodies.push(Body {
             index: i,
             position: p,
             velocity: p.normalize().cross(Vec3::unit_y()) * 0.1,
-            mass: 100.0
+            mass: 50.0
         });
     }
     let bc = bodies.len();
-    for i in 0..1200 {
+    for i in 0..1600 {
         let theta: Real = rnd.gen::<Real>()*2.0*pi();
         let r: Real = rnd.gen::<Real>()*8.0 + 8.0;
-        let y: Real = rnd.gen::<Real>()*2.0 - 1.0;
+        let y: Real = (rnd.gen::<Real>()*2.0 - 1.0)*0.3;
         let p = Vec3::new(r*theta.cos(), r*theta.sin(), y);
         bodies.push(Body {
             index: bc+i,
             position: p,
-            velocity: p.normalize().cross(Vec3::unit_y()) * 0.1,
-            mass: 100.0
+            velocity: p.normalize().cross(Vec3::unit_z()) * 0.1,
+            mass: 50.0
+        });
+    }
+    let bc = bodies.len();
+    for i in 0..1600 {
+        let theta: Real = rnd.gen::<Real>()*2.0*pi();
+        let r: Real = rnd.gen::<Real>()*8.0 + 8.0;
+        let y: Real = (rnd.gen::<Real>()*2.0 - 1.0)*0.3;
+        let p = Vec3::new(y, r*theta.cos(), r*theta.sin());
+        bodies.push(Body {
+            index: bc+i,
+            position: p,
+            velocity: p.normalize().cross(Vec3::unit_x()) * 0.1,
+            mass: 50.0
         });
     }
     let bc = bodies.len();
@@ -169,8 +182,8 @@ fn main() {
     out.start_file("metadata", zipopts).expect("start metadata file");
 
     let simm = SimulationMetadata {
-        delta_time: 0.005,
-        steps: 50_000
+        delta_time: 0.05,
+        steps: 10_000
     };
 
     println!("serializing metadata");
@@ -180,22 +193,27 @@ fn main() {
     let mut last_time = Instant::now();
 
     // simulate time
-    for step in 0..(simm.steps) {
+    let substeps = 5;
+    let dt = simm.delta_time / (substeps as Real);
+    println!("Δt = {}", dt);
+    for step in 0..(simm.steps * substeps) {
         if step % 500 == 0 {
             let time = Instant::now();
-            println!("step {}, Δ(real time)={:?}", step, (time - last_time));
+            println!("step {} of {} ({}), Δ(real time)={:?}", step, simm.steps*substeps, step/substeps, (time - last_time));
             last_time = time;
         }
         let (cb, nb) = if step % 2 == 0 { (&bodies, &mut next_bodies) } else { (&next_bodies, &mut bodies) };
-        out.start_file(format!("{}", step), zipopts).expect("start step file");
-        bincode::serialize_into(&mut out, cb, bincode::Infinite).expect("serialize step data");
+        if step % substeps == 0 {
+            out.start_file(format!("{}", step / substeps), zipopts).expect("start step file");
+            bincode::serialize_into(&mut out, &cb.iter().map(|x| x.position).collect::<Vec<_>>(), bincode::Infinite).expect("serialize step data");
+        }
         let tree = Tree::construct(&cb.iter().map(|x| x).collect(), Vec3::zero(), Vec3::new(500.0, 500.0, 500.0));
         *nb = cb.par_iter().map(|body| {
             let f = tree.calculate_force(body);
             let a = f / body.mass;
             Body {
-                position: body.position + body.velocity * simm.delta_time,
-                velocity: body.velocity + a * simm.delta_time,
+                position: body.position + body.velocity * dt,
+                velocity: body.velocity + a * dt,
                 .. *body
             }
         }).collect::<Vec<_>>();
