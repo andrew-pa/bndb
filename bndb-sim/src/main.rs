@@ -115,6 +115,24 @@ impl<'b> Tree<'b> {
     }
 }
 
+fn render_image(bodies: &Vec<Body>) -> image::RgbImage {
+    let mut img = image::ImageBuffer::new(640, 480);
+    let T = cgmath::perspective(cgmath::Deg(60.0), 640.0 / 480.0, 0.1, 100.0)*
+        cgmath::Matrix4::look_at(cgmath::Point3::new(0.0, 14.0, -30.0), cgmath::Point3::new(0.0, 0.0, 0.0), cgmath::Vector3::unit_y()); 
+    for b in bodies {
+        let mut p = T * cgmath::Vector4::new(b.position.x, b.position.y, b.position.z, 1.0);
+        p.x /= p.w;
+        p.y /= p.w;
+        p.z /= p.w;
+        if p.x < 0.0 || p.x > img.width() as f32 || p.y < 0.0 || p.y > img.height() as f32 { continue }
+        let p : &mut image::Rgb<u8> = img.get_pixel_mut(p.x as u32, p.y as u32);
+        p.data[0] += 40;
+        p.data[1] += 40;
+        p.data[2] += 40;
+    }
+    img
+}
+
 // tree N-bodies simulation
 //      for each 𝚫t
 //          build tree
@@ -177,9 +195,9 @@ fn main() {
     println!("init took: {:?}", (end_init - start_init));
     let mut next_bodies = Vec::new();
 
-    let filename = std::env::args().skip(1).next().expect("filename as first argument");
-    let mut out = tar::Builder::new(std::fs::OpenOptions::new()
-                                             .write(true).create(true).truncate(true).open(filename).expect("open output file"));
+    let mut dest_path = std::path::PathBuf::from(std::env::args().skip(1).next().expect("destination directory as first argument"));
+    //let mut out = tar::Builder::new(std::fs::OpenOptions::new()
+    //                                        .write(true).create(true).truncate(true).open(filename).expect("open output file"));
     //let mut out = zip::write::ZipWriter::new(std::fs::OpenOptions::new()
     //                                         .write(true).create(true).truncate(true).open(filename).expect("open output file"));
 
@@ -191,7 +209,7 @@ fn main() {
         steps: 10_0
     };
 
-    println!("serializing metadata");
+    /*println!("serializing metadata");
     let simm_size = bincode::serialized_size(&simm);
     let mut header = tar::Header::new_gnu();
     header.set_size(simm_size);
@@ -200,7 +218,7 @@ fn main() {
     staging_data.resize_default(simm_size as usize);
     bincode::serialize_into(&mut staging_data, &simm, bincode::Infinite).expect("serialize metadata");
     println!("data = {:?}", staging_data);
-    out.append_data(&mut header, "metadata", &staging_data[..]);
+    out.append_data(&mut header, "metadata", &staging_data[..]);*/
 
     let mut last_momentum = Vec3::zero();
     let mut last_time = Instant::now();
@@ -218,13 +236,17 @@ fn main() {
         let (cb, nb) = if step % 2 == 0 { (&bodies, &mut next_bodies) } else { (&next_bodies, &mut bodies) };
         if step % substeps == 0 {
             //out.start_file(format!("{}", step / substeps), zipopts).expect("start step file");
-            let positions = cb.iter().map(|x| x.position).collect::<Vec<_>>();
+            /*let positions = cb.iter().map(|x| x.position).collect::<Vec<_>>();
             let size = bincode::serialized_size(&positions);
             header.set_size(size);
             header.set_cksum();
             staging_data.resize_default(size as usize);
             bincode::serialize_into(&mut staging_data, &positions, bincode::Infinite).expect("serialize step data");
-            out.append_data(&mut header, format!("{}", step/substeps), &staging_data[..]);
+            out.append_data(&mut header, format!("{}", step/substeps), &staging_data[..]);*/
+            let img = image::ImageRgb8(render_image(&cb));
+            dest_path.push(format!("step{}.png", step/substeps));
+            img.save(&mut std::fs::File::create(&dest_path).unwrap(), image::PNG).unwrap();
+            dest_path.pop();
         }
         let tree = Tree::construct(&cb.iter().map(|x| x).collect(), Vec3::zero(), Vec3::new(500.0, 500.0, 500.0));
         *nb = cb.par_iter().map(|body| {
@@ -243,5 +265,5 @@ fn main() {
         }
     }
 
-    out.finish().expect("finish archive");
+    //out.finish().expect("finish archive");
 }
