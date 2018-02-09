@@ -1,3 +1,4 @@
+#![feature(vec_resize_default)]
 extern crate cgmath;
 extern crate serde;
 #[macro_use]
@@ -7,6 +8,7 @@ extern crate rand;
 extern crate tar;
 extern crate bndb_core;
 extern crate rayon;
+extern crate image;
 
 use cgmath::prelude::*;
 use cgmath::{dot};
@@ -175,19 +177,30 @@ fn main() {
     println!("init took: {:?}", (end_init - start_init));
     let mut next_bodies = Vec::new();
 
-    let mut out = zip::write::ZipWriter::new(std::fs::OpenOptions::new()
-                                             .write(true).create(true).truncate(true).open("out.zip").expect("open output file"));
+    let filename = std::env::args().skip(1).next().expect("filename as first argument");
+    let mut out = tar::Builder::new(std::fs::OpenOptions::new()
+                                             .write(true).create(true).truncate(true).open(filename).expect("open output file"));
+    //let mut out = zip::write::ZipWriter::new(std::fs::OpenOptions::new()
+    //                                         .write(true).create(true).truncate(true).open(filename).expect("open output file"));
 
-    let zipopts = zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Bzip2);
-    out.start_file("metadata", zipopts).expect("start metadata file");
+    //let zipopts = zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Bzip2);
+    //out.start_file("metadata", zipopts).expect("start metadata file");
 
     let simm = SimulationMetadata {
         delta_time: 0.05,
-        steps: 10_000
+        steps: 10_0
     };
 
     println!("serializing metadata");
-    bincode::serialize_into(&mut out, &simm, bincode::Infinite).expect("serialize metadata");
+    let simm_size = bincode::serialized_size(&simm);
+    let mut header = tar::Header::new_gnu();
+    header.set_size(simm_size);
+    header.set_cksum();
+    let mut staging_data = Vec::new();
+    staging_data.resize_default(simm_size as usize);
+    bincode::serialize_into(&mut staging_data, &simm, bincode::Infinite).expect("serialize metadata");
+    println!("data = {:?}", staging_data);
+    out.append_data(&mut header, "metadata", &staging_data[..]);
 
     let mut last_momentum = Vec3::zero();
     let mut last_time = Instant::now();
@@ -204,8 +217,14 @@ fn main() {
         }
         let (cb, nb) = if step % 2 == 0 { (&bodies, &mut next_bodies) } else { (&next_bodies, &mut bodies) };
         if step % substeps == 0 {
-            out.start_file(format!("{}", step / substeps), zipopts).expect("start step file");
-            bincode::serialize_into(&mut out, &cb.iter().map(|x| x.position).collect::<Vec<_>>(), bincode::Infinite).expect("serialize step data");
+            //out.start_file(format!("{}", step / substeps), zipopts).expect("start step file");
+            let positions = cb.iter().map(|x| x.position).collect::<Vec<_>>();
+            let size = bincode::serialized_size(&positions);
+            header.set_size(size);
+            header.set_cksum();
+            staging_data.resize_default(size as usize);
+            bincode::serialize_into(&mut staging_data, &positions, bincode::Infinite).expect("serialize step data");
+            out.append_data(&mut header, format!("{}", step/substeps), &staging_data[..]);
         }
         let tree = Tree::construct(&cb.iter().map(|x| x).collect(), Vec3::zero(), Vec3::new(500.0, 500.0, 500.0));
         *nb = cb.par_iter().map(|body| {
@@ -223,4 +242,6 @@ fn main() {
             last_momentum = p;
         }
     }
+
+    out.finish().expect("finish archive");
 }

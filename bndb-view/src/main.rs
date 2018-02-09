@@ -5,7 +5,7 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate bincode;
-extern crate zip;
+extern crate tar;
 extern crate bndb_core;
 
 use cgmath::prelude::*;
@@ -113,8 +113,7 @@ struct App {
     program: GLuint,
     vao: GLuint, vbo: GLuint,
     vp_unif: GLint,
-    vertex_data: Vec<Point3<GLfloat>>,
-    inf: zip::read::ZipArchive<std::fs::File>,
+    inf: tar::Archive<std::fs::File>,
     current_step: usize, t: GLfloat,
     simm: SimulationMetadata
 }
@@ -137,14 +136,7 @@ impl App {
             // Create a Vertex Buffer Object and copy the vertex data to it
             gl::GenBuffers(1, &mut vbo);
             gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
-            /*gl::BufferData(
-                gl::ARRAY_BUFFER,
-                (VERTEX_DATA.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
-                mem::transmute(&VERTEX_DATA[0]),
-                gl::STATIC_DRAW,
-                );*/
-
-            // Use shader program
+                // Use shader program
             gl::UseProgram(program);
 //            gl::BindFragDataLocation(program, 0, CString::new("out_color").unwrap().as_ptr());
 
@@ -164,10 +156,16 @@ impl App {
             println!("{}", vp_unif);
         }
 
-        let mut inf = zip::read::ZipArchive::new(std::fs::File::open(std::env::args().skip(1).next().expect("file path as first argument")).expect("open file")).expect("open archive");
-        let simm = bincode::deserialize_from(&mut inf.by_name("metadata").expect("open metadata file"), bincode::Infinite).expect("load sim metadata");
-        println!("simm = {:?}", simm);
+        let f = std::fs::File::open(std::env::args().skip(1).next().expect("file path as first argument")).expect("open file");
+        let mut inf = tar::Archive::new(f);
+        for e in inf.entries().expect("entries").map(|x| x.expect("entry")) {
+            println!("{:?}", e.header());
+        }
 
+
+        //let simm = bincode::deserialize_from(&mut inf.by_name("metadata").expect("open metadata file"), bincode::Infinite).expect("load sim metadata");
+        //println!("simm = {:?}", simm);
+/*
         let positions: Vec<Vec3> = bincode::deserialize_from(&mut inf.by_name(&format!("{}", 0)).expect("open step file"), bincode::Infinite).expect("load data");
         unsafe { gl::BufferData(
             gl::ARRAY_BUFFER,
@@ -175,21 +173,12 @@ impl App {
             mem::transmute(positions.as_ptr()),
             gl::DYNAMIC_DRAW,
             );
-        }
+        }*/
 
 
 
         App {
-            program, vao, vbo, vp_unif, inf, simm, current_step: 0, t: 0.0,
-            vertex_data: vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(0.0, 1.0, 0.0),
-                Point3::new(-1.0, 0.0, 0.0),
-                Point3::new(0.0, -1.0, 0.0),
-                Point3::new(0.0, 0.0, 1.0),
-                Point3::new(0.0, 0.0, -1.0),
-            ]
+            program, vao, vbo, vp_unif, inf, simm: SimulationMetadata{delta_time: 0.0, steps:100}, current_step: 0, t: 0.0
         }
     }
 
@@ -198,13 +187,13 @@ impl App {
         gl::BindBuffer(gl::ARRAY_BUFFER, self.vbo);
 
 
-        let positions: Vec<Vec3> = bincode::deserialize_from(&mut self.inf.by_name(&format!("{}", self.current_step)).expect("open step file"), bincode::Infinite).expect("load data");
+        /*let positions: Vec<Vec3> = bincode::deserialize_from(&mut self.inf.by_name(&format!("{}", self.current_step)).expect("open step file"), bincode::Infinite).expect("load data");
         gl::BufferData(
             gl::ARRAY_BUFFER,
             (positions.len() * mem::size_of::<Vec3>()) as GLsizeiptr,
             mem::transmute(positions.as_ptr()),
             gl::DYNAMIC_DRAW,
-        );
+        );*/
 
         self.current_step+=2;
         if self.current_step > self.simm.steps-1 {
@@ -220,7 +209,7 @@ impl App {
         let p: Matrix4<GLfloat> = cgmath::perspective(Rad(std::f32::consts::FRAC_PI_4), 1.333333, 0.1, 1000.0);
         gl::UniformMatrix4fv(self.vp_unif, 1, 0, (p*v).as_ptr());
         gl::PointSize(3.0);
-        gl::DrawArrays(gl::POINTS, 0, positions.len() as i32);
+        //gl::DrawArrays(gl::POINTS, 0, positions.len() as i32);
         self.t += 0.01;
     }
 }
